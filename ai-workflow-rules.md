@@ -12,6 +12,12 @@ TEST → REVIEW → VERIFY → DOCUMENT → UPDATE PROGRESS
 
 ## Session Start (mandatory, in this order)
 
+Packaged as the `session-start` skill
+([.claude/skills/session-start/SKILL.md](.claude/skills/session-start/SKILL.md))
+— invoke it (`/session-start`) at the beginning of any session in this repo
+instead of re-deriving these steps from memory. The steps below are the
+authoritative version; the skill must be kept in sync with this list.
+
 1. Read [CLAUDE.md](CLAUDE.md).
 2. Read [MEMORY.md](MEMORY.md).
 3. Read [progress-tracker.md](progress-tracker.md).
@@ -61,7 +67,7 @@ wrong.
 9. Review your own diff for scope creep, security issues, and consistency
    with existing patterns before handoff.
 
-## Prohibited Claims
+## Prohibited Claims & Status Vocabulary
 
 - Never claim tests were run if they were not actually executed in this
   session.
@@ -69,6 +75,19 @@ wrong.
   — state precisely what remains.
 - Never claim a module is `VERIFIED` without satisfying every item in the
   Module Completion Gate below.
+- Never say "production ready" without validating the specific
+  production-readiness criteria that claim implies (see Module
+  Completion Gate) — name which criteria were checked.
+
+Use these exact status words when describing work, and do not blur them:
+```
+PLANNED      — written into a requirement/architecture doc, no code yet
+DESIGNED     — data model/API/flow worked out in detail, still no code
+IMPLEMENTED  — code written, not yet verified by tests
+TESTED       — tests written and actually executed, with a result
+VERIFIED     — passes the full Module Completion Gate
+BLOCKED      — cannot proceed; state exactly what's blocking it
+```
 
 ## Module Completion Gate
 

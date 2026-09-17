@@ -1,14 +1,16 @@
-# Module 3 — Appointments & Scheduling
+# Module — Appointments & Scheduling
 
 ## Objective
-Provide slot-based appointment booking (public + staff), doctor
-availability, and appointment lifecycle management, with a concurrency-
-safe guarantee that a slot can never be double-booked.
+Provide slot-based appointment booking (public + staff) and appointment
+lifecycle management, with a concurrency-safe guarantee that a slot can
+never be double-booked. Doctor availability/clinic hours/holidays are now
+owned by `clinic-config.md` — this module consumes that data rather than
+owning it.
 
 ## Scope
 - Public slot availability lookup and booking (unauthenticated).
-- Staff-side booking, reschedule, cancel, check-in, no-show marking.
-- Doctor availability, clinic hours, holidays (data-driven).
+- Staff-side booking, reschedule, cancel, check-in, no-show marking,
+  consultation start/completion.
 - Appointment status lifecycle.
 
 ## Dependencies
@@ -18,34 +20,20 @@ safe guarantee that a slot can never be double-booked.
 - `patients.md`: `Patient.id`, patient lookup/search service. Public
   booking that doesn't match an existing patient creates a minimal
   `Patient` record (name + phone) via that module's create path.
+- `clinic-config.md`: `DoctorAvailability`, `ClinicHoliday` — source data
+  for slot generation. This module does not define or migrate those
+  tables.
 
 ## Entities / Data Model
 ```prisma
 enum AppointmentStatus {
   BOOKED
+  CONFIRMED
   CHECKED_IN
+  IN_CONSULTATION
   COMPLETED
   CANCELLED
   NO_SHOW
-}
-
-model DoctorAvailability {
-  id          String   @id @default(uuid())
-  doctorId    String   @map("doctor_id") // Staff.id, role DOCTOR
-  dayOfWeek   Int      @map("day_of_week") // 0=Sunday..6=Saturday
-  startTime   String   @map("start_time")  // "09:00"
-  endTime     String   @map("end_time")    // "17:00"
-  slotMinutes Int      @default(30) @map("slot_minutes")
-
-  @@map("doctor_availability")
-}
-
-model ClinicHoliday {
-  id   String   @id @default(uuid())
-  date DateTime
-  note String?
-
-  @@map("clinic_holidays")
 }
 
 model Appointment {
@@ -54,7 +42,7 @@ model Appointment {
   doctorId     String            @map("doctor_id") // Staff.id
   slotStartAt  DateTime          @map("slot_start_at") // UTC
   slotEndAt    DateTime          @map("slot_end_at")
-  status       AppointmentStatus @default(BOOKED)
+  status       AppointmentStatus @default(CONFIRMED)
   reason       String?
   createdBy    String?           @map("created_by") // Staff.id, null if public self-booked
   cancelledAt  DateTime?         @map("cancelled_at")
@@ -66,33 +54,39 @@ model Appointment {
   @@map("appointments")
 }
 ```
-The `@@unique([doctorId, slotStartAt])` constraint is the concurrency
-mechanism — see below.
+The `@@unique([doctorId, slotStartAt])` constraint (as a partial index
+excluding `CANCELLED` rows) is the concurrency mechanism — see below.
+`status` defaults to `CONFIRMED` — see State Machines for why `BOOKED` is
+not the default in the current (unresolved) confirmation-flow design.
 
 ## Relationships
 `Appointment.patientId` → `Patient.id`. `Appointment.doctorId` →
-`Staff.id`. Future Billing references `Appointment.id`.
+`Staff.id`. `visits.md`'s `Visit.appointmentId` and `billing.md`'s
+`Invoice.appointmentId` reference `Appointment.id`.
 
 ## API Endpoints
 | Method | Route | Auth | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/public/availability` | none | Available slots by doctor + date range |
+| GET | `/api/v1/public/availability` | none | Available slots by doctor + date range (reads `clinic-config.md` data) |
 | POST | `/api/v1/public/appointments` | none (rate-limited) | Public booking request |
 | GET | `/api/v1/public/appointments/lookup` | none (rate-limited) | Look up own booking by phone + booking ref |
 | GET | `/api/v1/appointments` | ADMIN/DOCTOR(own)/RECEPTIONIST/COMPOUNDER(read-only,today) | List/filter appointments |
 | POST | `/api/v1/appointments` | ADMIN/RECEPTIONIST | Staff-created booking |
+| PATCH | `/api/v1/appointments/:id/confirm` | ADMIN/RECEPTIONIST | Mark confirmed (see State Machines) |
 | PATCH | `/api/v1/appointments/:id/reschedule` | ADMIN/RECEPTIONIST | Change slot |
 | PATCH | `/api/v1/appointments/:id/cancel` | ADMIN/RECEPTIONIST/DOCTOR(own) | Cancel with reason |
 | PATCH | `/api/v1/appointments/:id/check-in` | ADMIN/RECEPTIONIST | Mark checked-in |
+| PATCH | `/api/v1/appointments/:id/start-consultation` | ADMIN/DOCTOR(own) | Mark in-consultation |
 | PATCH | `/api/v1/appointments/:id/no-show` | ADMIN/RECEPTIONIST | Mark no-show |
 | PATCH | `/api/v1/appointments/:id/complete` | ADMIN/DOCTOR(own) | Mark completed |
 
 ## Business Rules
 - A slot is defined by `(doctorId, slotStartAt)`; only one non-cancelled
   appointment may occupy it (see Concurrency).
-- Slots are generated from `DoctorAvailability` minus `ClinicHoliday`
-  dates minus already-booked slots — `GET /public/availability` computes
-  this on the fly, it is not a pre-materialized table.
+- Slots are generated from `clinic-config.md`'s `DoctorAvailability` minus
+  `ClinicHoliday` dates minus already-booked slots — `GET
+  /public/availability` computes this on the fly, it is not a
+  pre-materialized table.
 - Cancelling an appointment frees its slot immediately for rebooking.
 - Rescheduling is implemented as atomically cancelling the old slot and
   creating the new one (same transaction) — never a bare update of
@@ -106,14 +100,26 @@ mechanism — see below.
   own `Staff.id` ("own only" per the permission matrix).
 - COMPOUNDER gets read-only access to today's appointments only (to know
   what to prep), no write access.
+- See [business-rules.md](../business-rules.md) for the full catalogue of
+  scheduling-related rules, including the UNRESOLVED items below.
 
 ## State Machines
 ```
-BOOKED → CHECKED_IN → COMPLETED
-BOOKED → CANCELLED
-BOOKED → NO_SHOW
+BOOKED → CONFIRMED → CHECKED_IN → IN_CONSULTATION → COMPLETED
+CONFIRMED (created directly, staff/public) → CHECKED_IN → IN_CONSULTATION → COMPLETED
+BOOKED/CONFIRMED/CHECKED_IN → CANCELLED
+BOOKED/CONFIRMED → NO_SHOW
 ```
 No transitions out of `COMPLETED`, `CANCELLED`, or `NO_SHOW`.
+
+**UNRESOLVED (see [business-rules.md](../business-rules.md)):** whether
+`BOOKED → CONFIRMED` is a real manual step (e.g. reception calls to
+confirm) or purely a future-flow placeholder. Until the clinic decides,
+the default behavior is that both public and staff-created appointments
+are created directly in `CONFIRMED` (the `confirm` endpoint exists for
+forward-compatibility but is a no-op path in practice until this is
+resolved) — implementers must not silently invent a confirmation
+mechanism (e.g. auto-SMS) beyond what `notifications.md` already defines.
 
 ## Security / Privacy / Compliance
 - Public endpoints are unauthenticated but must be rate-limited per-IP
@@ -127,7 +133,7 @@ No transitions out of `COMPLETED`, `CANCELLED`, or `NO_SHOW`.
   or booking details.
 - Appointment list/detail responses for staff show patient name/phone
   (needed operationally) but not clinical history — that stays behind
-  `patients.md`'s own authorization.
+  `visits.md`'s own authorization.
 
 ## Transactions / Concurrency
 **This is the module's core hard requirement.** Booking (public or staff)
@@ -172,6 +178,8 @@ Only one INSERT succeeds; the other gets 23505 → 409 to that caller.
 - Public availability endpoint never exposes another patient's identity.
 - Rescheduling is atomic: a failed reschedule leaves the original
   appointment intact.
+- Invalid state transitions (e.g. `COMPLETED → CHECKED_IN`) are rejected
+  with `422`.
 
 ## Testing Requirements
 - Integration: fire concurrent booking requests at the same slot (e.g.
@@ -184,14 +192,17 @@ Only one INSERT succeeds; the other gets 23505 → 409 to that caller.
 - Multi-location scheduling.
 - Recurring appointments.
 - Waitlists.
+- Ad-hoc doctor unavailability/leave blocking (UNRESOLVED, see
+  business-rules.md — do not build speculatively).
 - SMS/email confirmation sending (that's `notifications.md` — this module
   only emits the event/data notifications needs).
 
 ## Cross-Module Contracts
 Published for later modules:
 - `Appointment.id`, `Appointment.patientId`, `Appointment.doctorId`,
-  `Appointment.status` — referenced by Billing (invoice tied to a visit/
-  appointment) and Notifications (confirmation/reminder triggers).
+  `Appointment.status` — referenced by `visits.md` (`Visit.appointmentId`),
+  `billing.md` (`Invoice.appointmentId`), and `notifications.md`
+  (confirmation/reminder triggers).
 - An appointment-created/-cancelled/-rescheduled event shape (structure
   TBD at implementation time, but must include `appointmentId`,
   `patientId`, `slotStartAt`, `status`) for Notifications to consume.
@@ -203,3 +214,5 @@ Published for later modules:
 - Keep the reschedule endpoint's transaction short — no notification
   sending inside it (see Notifications module — that's triggered after
   commit).
+- Implement after `clinic-config.md` — slot generation has a hard
+  dependency on that module's data existing.

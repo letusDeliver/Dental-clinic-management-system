@@ -7,15 +7,19 @@ assignment time and an auditable status history.
 
 ## Scope
 - Treatment catalogue (definitions: name, description, default price).
-- Patient treatments (a catalogue item applied to a specific patient,
-  optionally tied to a visit/appointment).
+- Patient treatments (a catalogue item applied to a specific patient
+  during a specific visit, optionally also linked to the originating
+  appointment).
 - Treatment status lifecycle.
 
 ## Dependencies
 - `foundation.md`, `staff-auth.md` (roles/authz).
-- `patients.md`: `Patient.id`, `ClinicalVisit.id`.
-- `appointments.md`: `Appointment.id` (a patient treatment may originate
-  from a specific appointment).
+- `patients.md`: `Patient.id`.
+- `visits.md`: `Visit.id` — every `PatientTreatment` is anchored to a
+  visit (see [business-rules.md](../business-rules.md): "Can a patient
+  have treatment without a visit?" → No).
+- `appointments.md`: `Appointment.id` (optional, denormalized convenience
+  link alongside `visitId`).
 
 ## Entities / Data Model
 ```prisma
@@ -42,7 +46,7 @@ model PatientTreatment {
   id                    String                 @id @default(uuid())
   patientId             String                 @map("patient_id")
   treatmentDefinitionId String                 @map("treatment_definition_id")
-  visitId               String?                @map("visit_id")
+  visitId               String                 @map("visit_id")
   appointmentId         String?                @map("appointment_id")
   priceAtAssignment     Decimal                @map("price_at_assignment")
   status                PatientTreatmentStatus @default(PLANNED)
@@ -61,8 +65,9 @@ changes later.
 
 ## Relationships
 `PatientTreatment.patientId` → `Patient.id`; `.treatmentDefinitionId` →
-`TreatmentDefinition.id`; `.appointmentId` → `Appointment.id` (optional);
-`.doctorId` → `Staff.id`. Billing references `PatientTreatment.id`.
+`TreatmentDefinition.id`; `.visitId` → `Visit.id` (required); `.appointmentId`
+→ `Appointment.id` (optional); `.doctorId` → `Staff.id`. Billing
+references `PatientTreatment.id`.
 
 ## API Endpoints
 | Method | Route | Auth | Purpose |

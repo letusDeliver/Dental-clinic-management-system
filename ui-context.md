@@ -28,36 +28,74 @@ credentials (401, generic message — do not reveal which field was wrong),
 account locked/disabled (403).
 
 ## Staff Dashboard
-Needs (per role): today's appointments, outstanding tasks, quick stats
-(from Reporting module). Role determines which widgets are populated —
-backend should let the frontend ask "what can I see" rather than the
-frontend hardcoding role logic; permission info can ride on the login
-response (role + capability list).
+Needs (per role, from `dashboard.md` — real-time "today" snapshot, not
+historical): today's appointments, outstanding tasks, quick stats. Role
+determines which widgets are populated (see `dashboard.md`'s per-role
+table) — backend should let the frontend ask "what can I see" rather than
+the frontend hardcoding role logic; permission info can ride on the login
+response (role + capability list, `GET /auth/me`).
 
 ## Patient Screens (staff-facing)
-Needs: search/list patients, patient detail (demographics + history
-summary), create/edit patient, view full clinical history (role-gated —
-COMPOUNDER sees a reduced view). States: not-found, forbidden (403, when a
-role tries to view restricted clinical detail), empty history for new
-patients.
+Needs: search/list patients, patient detail (demographics only — from
+`patients.md`), a cross-module summary widget (visit count, last visit,
+open balance, attachment count via `GET /patients/:id/summary`). Full
+clinical history is a separate screen backed by `visits.md`'s endpoints,
+not this one. States: not-found, forbidden (403, when a role tries to
+view restricted clinical detail), empty summary for new patients.
+
+## Visit / Clinical History Screens (staff-facing, ADMIN/DOCTOR only)
+Needs: list of a patient's visits (`visits.md`), visit detail with
+diagnosis entries, create visit + add diagnosis, follow-up date/notes
+display. States: forbidden (403) for RECEPTIONIST/COMPOUNDER attempting
+any access, empty state for a patient with no visits yet, amendment
+history shown as an append-only trail rather than an overwritten field.
 
 ## Appointment Screens (staff-facing)
-Needs: calendar/day view per doctor, create/reschedule/cancel, check-in,
-mark no-show. States: past-slot editing should be rejected (422), double
--booking rejected (409), cancellation-window rule violations rejected
-(422 with a clear reason code).
+Needs: calendar/day view per doctor, create/confirm/reschedule/cancel,
+check-in, start-consultation, mark no-show/completed — the full state
+machine from `appointments.md` (`BOOKED → CONFIRMED → CHECKED_IN →
+IN_CONSULTATION → COMPLETED`). States: past-slot editing should be
+rejected (422), double-booking rejected (409), invalid state transitions
+rejected (422 with a clear reason code).
 
 ## Doctor Consultation Screen
-Needs: patient history read, add clinical note/diagnosis, create/update
-treatment plan for the visit. States: draft vs. finalized note (if
-applicable), audit indicator not needed in UI but access itself is logged
-server-side.
+Needs: patient visit history read (`visits.md`), add clinical
+note/diagnosis, create/update treatment plan for the visit
+(`treatments.md`), issue a prescription (`prescriptions.md`), set a
+follow-up date. States: audit indicator not needed in UI but access
+itself is logged server-side; empty state for a fresh visit before any
+diagnosis is added.
+
+## Prescription Screen
+Needs: add prescription line items (medicine, dosage, frequency,
+duration, instructions) during/after a visit, printable view
+(`GET /prescriptions/:id/print`). States: at-least-one-item validation
+(422 if empty), forbidden for RECEPTIONIST/COMPOUNDER.
 
 ## Treatment Screens
 Needs: treatment catalogue browse (for building a plan), patient treatment
 list with status (planned/in-progress/completed), pricing shown from
 catalogue at time of assignment (frozen price on the patient-treatment
-record, not a live join, so historical invoices stay accurate).
+record, not a live join, so historical invoices stay accurate). Every
+patient treatment is created in the context of a visit — the UI should
+not offer "add treatment" outside an open visit screen.
+
+## Attachment Screens
+Needs: upload X-ray/document (two-step: request signed URL, upload, then
+confirm), thumbnail/list view on patient and visit detail screens,
+authenticated download (never a raw public link). States: disallowed file
+type/oversized file rejected before upload starts (422), forbidden for
+RECEPTIONIST/COMPOUNDER.
+
+## Clinic Configuration Screens (ADMIN only)
+Needs: edit clinic profile (name/address/contact), manage doctor weekly
+availability, manage holiday list. States: overlap-conflict rejection
+(422) when availability rules collide.
+
+## Audit Log Screen (ADMIN only)
+Needs: filterable/paginated log view (by actor, entity type/id, date
+range). Read-only — no edit/delete UI should ever be built against this
+data, since the API has no such endpoints.
 
 ## Billing Screens
 Needs: generate invoice from a visit's treatments, add discount, record

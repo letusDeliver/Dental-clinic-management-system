@@ -17,40 +17,70 @@ inventory), and reporting. Not a SaaS product for multiple clinics.
 
 ## Major Capabilities
 
-- Public clinic landing-page APIs (clinic info, services offered).
+- Public clinic landing-page APIs (clinic info, services offered, clinic
+  hours).
 - Public appointment booking (no login required).
-- Staff authentication & role-based access control.
+- Staff authentication, staff management & role-based access control.
+- Clinic configuration (working hours, holidays, doctor availability).
 - Patient management (identity, contact info).
-- Dental/medical records (history, visits, clinical notes, diagnosis,
-  attachments).
-- Treatment plans & procedures (catalogue + per-patient treatments).
-- Billing & invoicing (charges, discounts, payments, receipts).
-- Inventory/supplies tracking.
-- Notifications (appointment confirmations/reminders — abstraction now,
-  provider integration later).
-- Reporting & dashboard (appointments, revenue, workload, inventory usage).
+- Visits: symptoms, clinical notes, diagnosis, follow-up scheduling.
+- Prescriptions (medicine, dosage, frequency, duration, instructions).
+- Attachments (X-rays, scanned documents) with signed-URL access control.
+- Treatment plans & procedures (catalogue + per-patient treatments,
+  anchored to a visit).
+- Billing & invoicing (charges, discounts, partial/full payments,
+  receipts).
+- Audit logs (ADMIN-facing, covering every sensitive read/write across
+  the system).
+- Inventory/supplies tracking (lower priority / future — see Non-Goals
+  note below).
+- Notifications (appointment confirmations/reminders, follow-up
+  reminders — abstraction now, provider integration later).
+- Dashboard (real-time, role-scoped "today" view) and Reporting
+  (historical, date-range analytics) — kept as two distinct modules, see
+  [architecture-context.md](architecture-context.md).
+
+Module ownership detail for each capability lives in
+`docs/requirements/*.md`; cross-cutting domain rules (what's allowed,
+what's ambiguous) live in [docs/business-rules.md](docs/business-rules.md).
 
 ## Key Workflows
 
-- **Booking:** patient submits a booking request (name, phone, desired
-  slot) → system checks availability → confirms or rejects with
-  alternatives → reception can also book manually.
-- **Visit:** reception checks in patient → doctor records clinical
-  notes/diagnosis → treatment plan created/updated → billing generated.
-- **Billing:** invoice generated from treatments/consultation → payments
-  recorded (possibly partial) → outstanding balance tracked → receipt
-  issued.
-- **Inventory:** compounder logs stock usage/receipt → low-stock visibility
-  for reordering.
+- **Public Booking:** patient selects date → views available slots →
+  selects a slot → enters details → system finds/creates the patient
+  record → reserves the slot (concurrency-safe) → confirmation.
+- **Reception:** appointment → check-in → patient queue → handed to
+  doctor.
+- **Doctor Consultation:** appointment → visit created → diagnosis
+  recorded → treatment(s) assigned → prescription issued (optional) →
+  follow-up scheduled (optional) → appointment marked completed.
+- **Billing:** invoice generated from a visit's treatments/consultation →
+  payments recorded (possibly partial, multiple methods) → outstanding
+  balance tracked → receipt issued.
+- **Inventory** (lower priority / future): compounder logs stock
+  usage/receipt → low-stock visibility for reordering.
 
-## Business Rules (high level — detail lives in each module's requirement doc)
+See each workflow's owning module doc for the exact state machine and
+edge cases; see [docs/business-rules.md](docs/business-rules.md) for
+ambiguous points not yet resolved (e.g. whether appointment confirmation
+is a manual step).
+
+## Business Rules (high level — full catalogue in docs/business-rules.md)
 
 - Only one booking can hold a given doctor's time slot.
 - Backend enforces all authorization; no client-side-only access control.
-- Clinical record mutations and access to full medical history are
-  audited.
+- Every treatment and prescription is anchored to a visit — neither can
+  exist without one.
+- Clinical record mutations and access to full clinical history are
+  audited (see `docs/requirements/audit.md`).
 - Financial history (invoices/payments) is corrected via adjustments, not
   by editing history in place.
+- Nothing clinical or financial is ever hard-deleted.
+
+Detailed, per-question answers (including explicitly UNRESOLVED items
+awaiting clinic input) live in
+[docs/business-rules.md](docs/business-rules.md) — do not re-answer a
+question there is already tracked.
 
 ## Non-Goals (V1 — explicitly excluded)
 
@@ -66,3 +96,12 @@ inventory), and reporting. Not a SaaS product for multiple clinics.
 These may be documented as future ideas elsewhere but must not enter
 current module requirement docs without an explicit scope decision
 recorded in [MEMORY.md](MEMORY.md).
+
+**Note on Inventory & Reporting:** these have requirement docs
+(`docs/requirements/inventory.md`, `reporting.md`) from the first
+planning pass, but the expanded master prompt's explicit staff-app
+feature list (§2) does not mention them — `dashboard.md` covers the
+real-time "today" view that overlaps somewhat with Reporting's remit.
+They are not cut from scope, just deprioritized to the end of the build
+order (see `progress-tracker.md`) until the clinic confirms they're
+needed for V1.

@@ -24,11 +24,18 @@ Planning documentation complete. No application code exists yet.
   `ai-workflow-rules.md`, `architecture-context.md`, `code-standards.md`,
   `progress-tracker.md` (this file), `project-overview.md`, `ui-context.md`.
 - Created `docs/requirements/` with: `foundation.md`, `staff-auth.md`,
-  `patients.md`, `appointments.md`, `treatments.md`, `billing.md`,
-  `inventory.md`, `notifications.md`, `reporting.md`.
-- Key architecture decisions recorded in `MEMORY.md` (implementation
-  order, appointment concurrency strategy, patient-auth scope, API
-  envelope, no-insurance/no-payments-gateway in V1).
+  `clinic-config.md`, `patients.md`, `attachments.md`, `appointments.md`,
+  `visits.md`, `treatments.md`, `prescriptions.md`, `billing.md`,
+  `audit.md`, `notifications.md`, `dashboard.md`, `inventory.md`,
+  `reporting.md`.
+- Created `docs/business-rules.md` — cross-cutting domain-rule catalogue
+  with explicit RESOLVED/UNRESOLVED status per question.
+- Second planning pass (2026-09-17, same day) expanded the domain model:
+  split `patients.md` into Patients/Visits/Attachments, added
+  Prescriptions/Audit/Clinic-Config/Dashboard as their own modules,
+  expanded the appointment state machine, changed the API envelope to
+  `{ success, data|error }`, and documented the TypeScript and
+  enum-based-RBAC decisions explicitly. See `MEMORY.md` for full details.
 
 ## In Progress
 Nothing — planning phase output is complete, pending review/approval to
@@ -37,7 +44,9 @@ begin Module 0.
 ## Next Step
 Create a development task for **Module 0 — Foundation** using
 `requirement` pointing to `docs/requirements/foundation.md`, with
-`decomposeRequirement = true` and `autonomyLevel = advisory`.
+`decomposeRequirement = true` and `autonomyLevel = advisory`. Note
+Foundation's scope now includes the `AuditLog` table + `recordAudit`
+helper (see `docs/requirements/audit.md`).
 
 ## Dependencies
 None yet — Foundation has no upstream module dependency.
@@ -46,17 +55,26 @@ None yet — Foundation has no upstream module dependency.
 None.
 
 ## Open Questions
-- Object storage provider for patient attachments (local vs.
-  S3-compatible) — deferred to Patients module implementation time.
+See [docs/business-rules.md](docs/business-rules.md) for the full
+catalogue. Highlights that block specific modules:
+- Clinic's actual operating timezone and slot duration — needed before
+  Appointments implementation.
+- Whether `BOOKED → CONFIRMED` is a real manual confirmation step or
+  appointments should just start `CONFIRMED` — blocks finalizing
+  Appointments' confirmation-flow implementation detail.
+- Ad-hoc doctor unavailability/leave blocking — not modeled in
+  Clinic Config V1; needs a decision before Appointments assumes it away.
+- Object storage provider for attachments (local vs. S3-compatible) —
+  deferred to Attachments module implementation time.
 - Notification provider(s) (Email/SMS/WhatsApp) — deferred to
   Notifications module implementation time.
-- Clinic's actual operating timezone and business hours — needed as real
-  config values before Appointments implementation; currently only the
-  *mechanism* (data-driven hours) is designed.
 
 ## Recent Changes
-- 2026-09-17: Initial planning session. See `MEMORY.md` for decision
-  details.
+- 2026-09-17: Initial planning session (root memory files + first 9
+  requirement docs).
+- 2026-09-17: Domain-model expansion (Visits/Prescriptions/Attachments/
+  Audit/Clinic-Config/Dashboard split out; business-rules.md added; API
+  envelope and RBAC/language decisions documented). See `MEMORY.md`.
 
 ## Tests
 None yet — no code exists.

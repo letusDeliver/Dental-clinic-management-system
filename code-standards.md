@@ -3,6 +3,11 @@
 Practical conventions. Prefer maintainable code over abstraction for its
 own sake — three similar lines beat a premature helper.
 
+This is a monorepo (`backend/` + `frontend/`, see [CLAUDE.md](CLAUDE.md));
+every convention below describes the backend. All paths (`src/...`) are
+relative to `backend/`. Frontend conventions will be added here once a
+frontend stack is chosen.
+
 ## TypeScript / JavaScript Conventions
 
 - TypeScript everywhere in `src/`; `strict: true` in `tsconfig.json`.
@@ -63,7 +68,9 @@ creates a cycle, the shared contract is lifted into `src/shared/`.
 
 ## API Responses
 
-- Always the envelope from [architecture-context.md](architecture-context.md#api-conventions).
+- Always the envelope from [architecture-context.md](architecture-context.md#api-conventions):
+  `{ success: true, data }` or `{ success: false, error: { code, message, details } }`.
+  Never mix in ad-hoc top-level fields.
 - Never return Prisma models directly — map to explicit response DTOs so
   internal fields (password hashes, soft-delete markers) can't leak by
   accident when the schema changes.

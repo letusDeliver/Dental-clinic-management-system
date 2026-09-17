@@ -19,6 +19,8 @@ financial history that is corrected via adjustments, never in-place edits.
 - `appointments.md`: `Appointment.id` (optional link).
 - `treatments.md`: `PatientTreatment.id`, `.priceAtAssignment` (source of
   invoice line items).
+- `audit.md`: `recordAudit(...)` helper — invoice/payment writes are on
+  the consolidated audit requirement list.
 
 ## Entities / Data Model
 ```prisma
@@ -62,6 +64,7 @@ enum PaymentMethod {
   CASH
   CARD
   UPI
+  BANK_TRANSFER
   OTHER
 }
 
@@ -121,8 +124,8 @@ No transitions out of `PAID`/`VOID`.
 ## Security / Privacy / Compliance
 - Payment and invoice data is financial PII-adjacent — access restricted
   per the matrix above; never exposed on any public endpoint.
-- Audit log entries required for: invoice creation, payment recording,
-  and voiding (who, when, amount).
+- Audit log entries required for invoice creation, payment recording, and
+  voiding — see the consolidated list in [audit.md](audit.md).
 - Receipts must not include other patients' data even indirectly (no
   cross-patient aggregate leakage in a single receipt document).
 
